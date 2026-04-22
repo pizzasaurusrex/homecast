@@ -65,7 +65,7 @@ func TestGenerateAirConnectXMLPreservesOrder(t *testing.T) {
 	idxA := strings.Index(string(out), "<udn>a</udn>")
 	idxB := strings.Index(string(out), "<udn>b</udn>")
 	idxC := strings.Index(string(out), "<udn>c</udn>")
-	if !(idxA < idxB && idxB < idxC) {
+	if idxA >= idxB || idxB >= idxC {
 		t.Errorf("order not preserved: a=%d b=%d c=%d", idxA, idxB, idxC)
 	}
 }
