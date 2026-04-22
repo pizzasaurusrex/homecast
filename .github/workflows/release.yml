@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: build matrix
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          VERSION=${GITHUB_REF_NAME}
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          PKG=github.com/pizzasaurusrex/homecast/internal/version
+          LDFLAGS="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}"
+          build_one() {
+            local goos=$1 goarch=$2 goarm=$3 label=$4
+            echo "Building ${label}"
+            env GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" CGO_ENABLED=0 \
+              go build -trimpath -ldflags "$LDFLAGS" \
+              -o "dist/homecast-${VERSION}-${label}" ./cmd/homecast
+          }
+          build_one linux amd64 ""  linux-amd64
+          build_one linux arm64 ""  linux-arm64
+          build_one linux arm   7   linux-armv7
+          (cd dist && sha256sum * > SHA256SUMS)
+      - name: release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/homecast-*
+            dist/SHA256SUMS
