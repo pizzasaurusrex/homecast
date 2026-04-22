@@ -6,7 +6,43 @@ with native AirPlay controls. Thin wrapper around
 [philippe44/AirConnect](https://github.com/philippe44/AirConnect) that adds
 lifecycle management, a web dashboard, and a one-line installer.
 
+> **Fresh session? Start here.** The [Progress](#progress) section below is the
+> living status log — it records which milestones are complete, what's in
+> flight, and any open questions. Every commit that advances project state
+> updates it, so this file alone is enough to pick up without prior context.
+
 ---
+
+## Progress
+
+Status log, newest first. Every PR that touches code updates this section in
+the same commit. Use merged PR links as the audit trail.
+
+### Milestones
+
+| Milestone | Status         | Notes                                             |
+|-----------|----------------|---------------------------------------------------|
+| M1        | ✅ done (2026-04-22) | Skeleton, CI, cross-compile release. [v0.0.1](https://github.com/pizzasaurusrex/homecast/releases/tag/v0.0.1) |
+| M2        | ✅ done (2026-04-22) | config, discovery, bridge packages, `--dry-run` end-to-end works against real Google Homes. Coverage ≥80% on every package. |
+| M3        | 🔜 next        | HTTP API + embedded web UI. See section 5.        |
+| M4        | ⏳ pending     | Installer, systemd, Docker-based integration test |
+| M5        | ⏳ stretch     | iOS Shortcuts pack                                |
+
+### Recent fixes
+
+- **CI lint unblock** — [PR #1](https://github.com/pizzasaurusrex/homecast/pull/1): golangci-lint binary was built with Go 1.24 but go.mod targets 1.25; switched to `go install` + added `.golangci.yml`.
+
+### Next actions (in order)
+
+1. M3 kickoff — decide stdlib-only vs. chi/gorilla router, scaffold `internal/api` with status + devices + logs endpoints.
+2. Write embedded web UI (plain HTML/CSS/JS, no framework, Go `embed`).
+3. Manual E2E on the Pi: prove an iPhone can AirPlay to a Google Home via the bridge controlled from the UI.
+
+### Open questions still deferred
+
+- Hostname: rely on `homecast.local` via avahi (Pi OS ships it) or document alternative?
+- API auth: none in v1 (LAN assumption). Add token header in v2?
+- Logging format: `log/slog` JSON; acceptable for operators?
 
 ## 1. Problem
 
