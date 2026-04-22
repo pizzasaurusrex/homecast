@@ -24,7 +24,7 @@ the same commit. Use merged PR links as the audit trail.
 |-----------|----------------|---------------------------------------------------|
 | M1        | ✅ done (2026-04-22) | Skeleton, CI, cross-compile release. [v0.0.1](https://github.com/pizzasaurusrex/homecast/releases/tag/v0.0.1) |
 | M2        | ✅ done (2026-04-22) | config, discovery, bridge packages, `--dry-run` end-to-end works against real Google Homes. Coverage ≥80% on every package. |
-| M3        | 🔜 next        | HTTP API + embedded web UI. See section 5.        |
+| M3        | 🚧 in flight   | HTTP API + embedded web UI. Sliced 1/4 → 4/4; slice 1 (`internal/logs` ring buffer) in review. |
 | M4        | ⏳ pending     | Installer, systemd, Docker-based integration test |
 | M5        | ⏳ stretch     | iOS Shortcuts pack                                |
 
@@ -34,9 +34,12 @@ the same commit. Use merged PR links as the audit trail.
 
 ### Next actions (in order)
 
-1. M3 kickoff — decide stdlib-only vs. chi/gorilla router, scaffold `internal/api` with status + devices + logs endpoints.
-2. Write embedded web UI (plain HTML/CSS/JS, no framework, Go `embed`).
-3. Manual E2E on the Pi: prove an iPhone can AirPlay to a Google Home via the bridge controlled from the UI.
+1. M3 is sliced into four PRs to keep each reviewable:
+   1. `internal/logs` ring-buffer `io.Writer` (in review).
+   2. `internal/api` stdlib `net/http` mux + JSON handlers (`httptest` tested).
+   3. `web/` vanilla HTML/CSS/JS UI served via `embed` (decision: no framework — see `project_ui_framework_decision.md`).
+   4. Wire serve mode into `cmd/homecast`; extract saved⨯discovered device merge so `--dry-run` and the API share one source of truth.
+2. Manual E2E on the Pi: prove an iPhone can AirPlay to a Google Home via the bridge controlled from the UI.
 
 ### Open questions still deferred
 
