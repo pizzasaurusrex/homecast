@@ -1,5 +1,3 @@
-// Package logs provides an in-memory ring buffer that satisfies io.Writer
-// and retains the last N complete lines for tailing.
 package logs
 
 import "sync"
@@ -9,9 +7,7 @@ import "sync"
 // accumulated bytes as one line to bound memory.
 const maxLineBytes = 64 * 1024
 
-// Buffer is a bounded ring buffer of recent log lines. It implements
-// io.Writer: each '\n' in the input becomes a retained line. The buffer
-// is safe for concurrent use.
+// Buffer is a bounded ring buffer of recent log lines. It is safe for concurrent use by multiple writers and readers.
 type Buffer struct {
 	mu       sync.Mutex
 	lines    []string
