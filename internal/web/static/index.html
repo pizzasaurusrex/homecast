@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>homecast</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>homecast</h1>
+    <div class="status-card" aria-live="polite">
+      <div class="status-row">
+        <span class="label">Bridge</span>
+        <span id="bridge-state" class="value state-unknown">unknown</span>
+      </div>
+      <div class="status-row">
+        <span class="label">Uptime</span>
+        <span id="uptime" class="value">&mdash;</span>
+      </div>
+      <button id="restart-btn" type="button">Restart bridge</button>
+    </div>
+  </header>
+
+  <main>
+    <section aria-labelledby="devices-heading">
+      <div class="section-head">
+        <h2 id="devices-heading">Devices</h2>
+        <button id="refresh-devices-btn" type="button" class="link-btn">Refresh</button>
+      </div>
+      <p class="hint">Enable a speaker to expose it as an AirPlay target.</p>
+      <ul id="devices" class="device-list" aria-live="polite"></ul>
+      <div id="devices-empty" class="empty hidden">
+        No devices discovered yet. Make sure the Pi is on the same Wi-Fi as
+        your Google Home speakers, then click Refresh.
+      </div>
+    </section>
+
+    <section aria-labelledby="logs-heading">
+      <div class="section-head">
+        <h2 id="logs-heading">Recent logs</h2>
+        <span id="logs-meta" class="hint"></span>
+      </div>
+      <pre id="logs" class="logs" aria-live="polite">(loading&hellip;)</pre>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

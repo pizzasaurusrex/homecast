@@ -24,7 +24,7 @@ the same commit. Use merged PR links as the audit trail.
 |-----------|----------------|---------------------------------------------------|
 | M1        | ✅ done (2026-04-22) | Skeleton, CI, cross-compile release. [v0.0.1](https://github.com/pizzasaurusrex/homecast/releases/tag/v0.0.1) |
 | M2        | ✅ done (2026-04-22) | config, discovery, bridge packages, `--dry-run` end-to-end works against real Google Homes. Coverage ≥80% on every package. |
-| M3        | 🚧 in flight   | HTTP API + embedded web UI. Slice 1 (`internal/logs`) merged [PR #3](https://github.com/pizzasaurusrex/homecast/pull/3); slice 2 (`internal/api` handlers) in review. |
+| M3        | 🚧 in flight   | HTTP API + embedded web UI. Slices 1–2 merged ([PR #3](https://github.com/pizzasaurusrex/homecast/pull/3), [PR #4](https://github.com/pizzasaurusrex/homecast/pull/4)); slice 3 (`internal/web` embedded UI) in review; slice 4 pending. |
 | M4        | ⏳ pending     | Installer, systemd, Docker-based integration test |
 | M5        | ⏳ stretch     | iOS Shortcuts pack                                |
 
@@ -36,8 +36,8 @@ the same commit. Use merged PR links as the audit trail.
 
 1. M3 is sliced into four PRs to keep each reviewable:
    1. `internal/logs` ring-buffer `io.Writer` (merged, [PR #3](https://github.com/pizzasaurusrex/homecast/pull/3)).
-   2. `internal/api` stdlib `net/http` mux + JSON handlers ([PR #4](https://github.com/pizzasaurusrex/homecast/pull/4); review follow-up commit pending).
-   3. `web/` vanilla HTML/CSS/JS UI served via `embed` (decision: no framework — see `project_ui_framework_decision.md`).
+   2. `internal/api` stdlib `net/http` mux + JSON handlers (merged, [PR #4](https://github.com/pizzasaurusrex/homecast/pull/4)).
+   3. `internal/web` vanilla HTML/CSS/JS UI served via `embed` (in review; decision: no framework — see `project_ui_framework_decision.md`). Lives under `internal/web/` rather than repo-root `web/` so Go's `//go:embed` can reach the assets from a package directory.
    4. Wire serve mode into `cmd/homecast`; extract saved⨯discovered device merge so `--dry-run` and the API share one source of truth.
 2. Manual E2E on the Pi: prove an iPhone can AirPlay to a Google Home via the bridge controlled from the UI.
 
@@ -181,11 +181,13 @@ homecast/
 │   ├── discovery/            (mDNS Google Cast discovery)
 │   ├── bridge/               (AirConnect subprocess + XML config gen)
 │   ├── api/                  (HTTP handlers, server)
-│   └── logs/                 (log tailing)
-├── web/                      (embedded static assets)
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
+│   ├── logs/                 (log tailing)
+│   └── web/                  (embedded static UI assets)
+│       ├── web.go
+│       └── static/
+│           ├── index.html
+│           ├── style.css
+│           └── app.js
 ├── scripts/
 │   ├── install.sh
 │   └── uninstall.sh
