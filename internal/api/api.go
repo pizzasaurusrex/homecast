@@ -1,8 +1,10 @@
+// Package api serves homecast's HTTP JSON API and embedded web UI.
 package api
 
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -11,9 +13,10 @@ import (
 	"github.com/pizzasaurusrex/homecast/internal/discovery"
 )
 
+// ConfigStore is the subset of config operations the api needs. Snapshot
+// returns by value so callers cannot mutate internal state.
 type ConfigStore interface {
-	// Returns a read-only copy of the current config. 
-	Snapshot() *config.Config
+	Snapshot() config.Config
 	UpsertDevice(d config.Device) error
 }
 
@@ -35,10 +38,10 @@ type Options struct {
 	Discoverer      discovery.Discoverer
 	Supervisor      Supervisor
 	Logs            LogTailer
+	Logger          *slog.Logger
 	DiscoverTimeout time.Duration
 	RestartTimeout  time.Duration
-	// Now is used for uptime calculation; tests override it.
-	Now func() time.Time
+	Now             func() time.Time
 }
 
 const (
@@ -56,6 +59,9 @@ func NewHandler(opts Options) http.Handler {
 	}
 	if opts.RestartTimeout == 0 {
 		opts.RestartTimeout = 5 * time.Second
+	}
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
 	}
 	s := &server{opts: opts}
 
@@ -92,4 +98,12 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(envelope{Ok: false, Error: msg})
+}
+
+// internalError logs err server-side and returns a generic 500 to the client so
+// filesystem paths and similar details don't leak into browser responses.
+func (s *server) internalError(w http.ResponseWriter, clientMsg string, err error, logAttrs ...any) {
+	attrs := append([]any{"err", err}, logAttrs...)
+	s.opts.Logger.Error(clientMsg, attrs...)
+	writeError(w, http.StatusInternalServerError, clientMsg)
 }

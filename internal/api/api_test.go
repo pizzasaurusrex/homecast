@@ -1,10 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,12 +27,12 @@ type fakeConfigStore struct {
 	upsertErr error
 }
 
-func (f *fakeConfigStore) Snapshot() *config.Config {
+func (f *fakeConfigStore) Snapshot() config.Config {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	copyCfg := *f.cfg
-	copyCfg.Devices = append([]config.Device(nil), f.cfg.Devices...)
-	return &copyCfg
+	out := *f.cfg
+	out.Devices = append([]config.Device(nil), f.cfg.Devices...)
+	return out
 }
 
 func (f *fakeConfigStore) UpsertDevice(d config.Device) error {
@@ -57,15 +59,17 @@ func (f *fakeConfigStore) UpsertDevice(d config.Device) error {
 }
 
 type fakeSupervisor struct {
-	state      bridge.State
-	startedAt  time.Time
-	restartErr error
-	restarts   int
+	state        bridge.State
+	startedAt    time.Time
+	restartErr   error
+	restarts     int
+	ctxErrAtCall error
 }
 
 func (f *fakeSupervisor) State() bridge.State  { return f.state }
 func (f *fakeSupervisor) StartedAt() time.Time { return f.startedAt }
-func (f *fakeSupervisor) Restart(_ context.Context, _ time.Duration) error {
+func (f *fakeSupervisor) Restart(ctx context.Context, _ time.Duration) error {
+	f.ctxErrAtCall = ctx.Err()
 	f.restarts++
 	return f.restartErr
 }
@@ -86,6 +90,11 @@ func (f *fakeLogs) Tail(n int) []string {
 	return out
 }
 
+// silentLogger discards logs in tests unless a test captures them explicitly.
+func silentLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
 // --- helpers -------------------------------------------------------------
 
 func newTestHandler(t *testing.T, opts Options) http.Handler {
@@ -101,6 +110,9 @@ func newTestHandler(t *testing.T, opts Options) http.Handler {
 	}
 	if opts.Logs == nil {
 		opts.Logs = &fakeLogs{}
+	}
+	if opts.Logger == nil {
+		opts.Logger = silentLogger()
 	}
 	if opts.DiscoverTimeout == 0 {
 		opts.DiscoverTimeout = 50 * time.Millisecond
@@ -158,6 +170,12 @@ func TestStatus_Running(t *testing.T) {
 	}
 	if m["uptimeSeconds"].(float64) != 20 {
 		t.Fatalf("uptimeSeconds: got %v want 20", m["uptimeSeconds"])
+	}
+	if m["startedAt"] != "2026-04-22T11:59:50Z" {
+		t.Fatalf("startedAt: got %v", m["startedAt"])
+	}
+	if _, ok := m["airconnectVersion"]; ok {
+		t.Fatalf("airconnectVersion key must not be present until populated; got %+v", m)
 	}
 }
 
@@ -217,6 +235,54 @@ func TestDevices_MergesSavedAndDiscovered(t *testing.T) {
 	}
 }
 
+func TestDevices_DiscoveryError_LogsAndReturnsSavedOnly(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	cfg := config.Default()
+	cfg.Devices = []config.Device{{ID: "kitchen", Name: "Kitchen", Enabled: true}}
+	store := &fakeConfigStore{cfg: cfg}
+	disc := discovery.Fake{Err: errors.New("mdns flapped")}
+	h := newTestHandler(t, Options{Config: store, Discoverer: disc, Logger: logger})
+
+	w := do(t, h, http.MethodGet, "/api/devices", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 even on discovery error, got %d body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w.Body)
+	list := env.Data.([]interface{})
+	if len(list) != 1 {
+		t.Fatalf("want 1 saved device, got %d", len(list))
+	}
+	d := list[0].(map[string]interface{})
+	if d["discovered"].(bool) != false {
+		t.Errorf("expected discovered=false when mDNS errored, got %v", d)
+	}
+	if !strings.Contains(logBuf.String(), "mdns flapped") {
+		t.Errorf("expected discovery error to be logged, got: %s", logBuf.String())
+	}
+}
+
+func TestDevices_NilDiscoverer_SavedOnly(t *testing.T) {
+	cfg := config.Default()
+	cfg.Devices = []config.Device{{ID: "kitchen", Name: "Kitchen", Enabled: true}}
+	store := &fakeConfigStore{cfg: cfg}
+	h := NewHandler(Options{
+		Config:     store,
+		Supervisor: &fakeSupervisor{state: bridge.StateStopped},
+		Logs:       &fakeLogs{},
+		Logger:     silentLogger(),
+	})
+	w := do(t, h, http.MethodGet, "/api/devices", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w.Body)
+	list := env.Data.([]interface{})
+	if len(list) != 1 {
+		t.Fatalf("want 1 saved device, got %d", len(list))
+	}
+}
+
 func TestEnable_ExistingSavedDevice(t *testing.T) {
 	cfg := config.Default()
 	cfg.Devices = []config.Device{{ID: "kitchen", Name: "Kitchen Home", Enabled: false}}
@@ -250,6 +316,24 @@ func TestEnable_DiscoveredButNotSaved_Upserts(t *testing.T) {
 	}
 }
 
+func TestEnable_DiscoveredWithEmptyName_404(t *testing.T) {
+	// A malformed mDNS record with no usable name must not be persisted —
+	// Validate() rejects empty-name devices, and the file-backed store
+	// (slice 4) would error on Save. Treat it as "not found".
+	store := &fakeConfigStore{cfg: config.Default()}
+	disc := discovery.Fake{Devices: []discovery.Device{
+		{ID: "weirdo", Name: ""},
+	}}
+	h := newTestHandler(t, Options{Config: store, Discoverer: disc})
+	w := do(t, h, http.MethodPost, "/api/devices/weirdo/enable", "")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("code: %d body=%s", w.Code, w.Body.String())
+	}
+	if len(store.Snapshot().Devices) != 0 {
+		t.Fatalf("empty-name device must not be saved")
+	}
+}
+
 func TestEnable_UnknownDevice_404(t *testing.T) {
 	h := newTestHandler(t, Options{})
 	w := do(t, h, http.MethodPost, "/api/devices/ghost/enable", "")
@@ -278,8 +362,6 @@ func TestDisable_ExistingSaved(t *testing.T) {
 }
 
 func TestDisable_NotSaved_404(t *testing.T) {
-	// A device that is discovered but not saved cannot be disabled — it's
-	// already off.
 	disc := discovery.Fake{Devices: []discovery.Device{{ID: "living", Name: "Living"}}}
 	h := newTestHandler(t, Options{Discoverer: disc})
 	w := do(t, h, http.MethodPost, "/api/devices/living/disable", "")
@@ -288,14 +370,24 @@ func TestDisable_NotSaved_404(t *testing.T) {
 	}
 }
 
-func TestEnable_UpsertError_500(t *testing.T) {
+func TestEnable_UpsertError_500_GenericMessage(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 	cfg := config.Default()
 	cfg.Devices = []config.Device{{ID: "kitchen", Name: "Kitchen", Enabled: false}}
-	store := &fakeConfigStore{cfg: cfg, upsertErr: errors.New("disk full")}
-	h := newTestHandler(t, Options{Config: store})
+	store := &fakeConfigStore{cfg: cfg, upsertErr: errors.New("permission denied: /etc/homecast/config.yaml")}
+	h := newTestHandler(t, Options{Config: store, Logger: logger})
+
 	w := do(t, h, http.MethodPost, "/api/devices/kitchen/enable", "")
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("code: %d body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w.Body)
+	if strings.Contains(env.Error, "/etc/homecast") || strings.Contains(env.Error, "permission denied") {
+		t.Errorf("raw error leaked to client: %q", env.Error)
+	}
+	if !strings.Contains(logBuf.String(), "permission denied") {
+		t.Errorf("expected raw error to be logged server-side, got: %s", logBuf.String())
 	}
 }
 
@@ -311,12 +403,42 @@ func TestBridgeRestart_Success(t *testing.T) {
 	}
 }
 
-func TestBridgeRestart_SupervisorError_500(t *testing.T) {
-	sup := &fakeSupervisor{state: bridge.StateRunning, restartErr: errors.New("boom")}
-	h := newTestHandler(t, Options{Supervisor: sup})
+func TestBridgeRestart_SupervisorError_500_Generic(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	sup := &fakeSupervisor{state: bridge.StateRunning, restartErr: errors.New("exec: aircast: /usr/local/lib/homecast/aircast: no such file or directory")}
+	h := newTestHandler(t, Options{Supervisor: sup, Logger: logger})
 	w := do(t, h, http.MethodPost, "/api/bridge/restart", "")
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("code: %d body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w.Body)
+	if strings.Contains(env.Error, "/usr/local/lib") {
+		t.Errorf("raw path leaked to client: %q", env.Error)
+	}
+	if !strings.Contains(logBuf.String(), "/usr/local/lib") {
+		t.Errorf("expected raw error logged, got: %s", logBuf.String())
+	}
+}
+
+func TestBridgeRestart_UsesDetachedContext(t *testing.T) {
+	// If the client disconnects mid-restart, the supervisor's child process
+	// (started via exec.CommandContext) must not get killed along with the
+	// request. The handler must pass a context independent of r.Context().
+	sup := &fakeSupervisor{state: bridge.StateRunning}
+	h := newTestHandler(t, Options{Supervisor: sup})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r := httptest.NewRequest(http.MethodPost, "/api/bridge/restart", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("code: %d body=%s", w.Code, w.Body.String())
+	}
+	if sup.ctxErrAtCall != nil {
+		t.Fatalf("restart ran with cancelled context: %v", sup.ctxErrAtCall)
 	}
 }
 
@@ -355,7 +477,6 @@ func TestLogs_InvalidTail_400(t *testing.T) {
 }
 
 func TestLogs_TailCap(t *testing.T) {
-	// Tail beyond the max cap is silently clamped.
 	logs := &fakeLogs{}
 	h := newTestHandler(t, Options{Logs: logs})
 	w := do(t, h, http.MethodGet, "/api/logs?tail=999999", "")
