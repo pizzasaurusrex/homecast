@@ -9,7 +9,29 @@ architecture.
 
 ## Install
 
-Coming in M4. For now, see the plan.
+Flash a Raspberry Pi with [Raspberry Pi OS](https://www.raspberrypi.com/software/),
+SSH in, and run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pizzasaurusrex/homecast/main/scripts/install.sh | sudo sh
+```
+
+The script will:
+1. Detect your Pi's architecture (armv7 / arm64)
+2. Download the latest `homecast` and `aircast` binaries
+3. Create a `homecast` system user and write a default config to `/etc/homecast/config.yaml`
+4. Install and start a systemd service
+
+When it finishes, open `http://homecast.local:8080` (or the IP it prints) in any
+browser on the same network. Toggle your Google Home / Nest speakers on, then pick
+them from the AirPlay menu on your iPhone.
+
+### Uninstall
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pizzasaurusrex/homecast/main/scripts/uninstall.sh | sudo sh
+# Add --purge to also remove config and logs
+```
 
 ## Develop
 
