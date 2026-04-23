@@ -1,4 +1,3 @@
-// Package api serves homecast's HTTP JSON API and embedded web UI.
 package api
 
 import (
@@ -12,13 +11,9 @@ import (
 	"github.com/pizzasaurusrex/homecast/internal/discovery"
 )
 
-// ConfigStore is the subset of config operations the api needs. Implementations
-// live outside this package (slice 4 wires a file-backed one into cmd/homecast).
 type ConfigStore interface {
-	// Snapshot returns a read-only copy of the current config. Callers must
-	// not mutate the returned value.
+	// Returns a read-only copy of the current config. 
 	Snapshot() *config.Config
-	// UpsertDevice inserts or updates a device entry by ID.
 	UpsertDevice(d config.Device) error
 }
 
