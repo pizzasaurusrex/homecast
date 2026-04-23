@@ -1,5 +1,8 @@
 /homecast
 /dist/
+/aircast
+aircast-macos*
+airconnect.local.yaml
 *.test
 *.out
 coverage.txt

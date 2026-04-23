@@ -23,6 +23,28 @@ func TestRunVersionFlag(t *testing.T) {
 	}
 }
 
+func TestRunDryRunPreservesSavedDisabledDevice(t *testing.T) {
+	cfg := config.Default()
+	cfg.Devices = []config.Device{{ID: "kitchen-id", Name: "Kitchen Home", Enabled: false}}
+	path := writeConfigFile(t, cfg)
+
+	var stdout, stderr bytes.Buffer
+	disc := discovery.Fake{Devices: []discovery.Device{
+		{ID: "kitchen-id", Name: "Kitchen Home", Addrs: []string{"192.168.1.10"}},
+	}}
+	err := run(context.Background(), []string{"--dry-run", "--config", path}, &stdout, &stderr, disc)
+	if err != nil {
+		t.Fatalf("dry-run with config: %v (stderr=%s)", err, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "<udn>kitchen-id</udn>") {
+		t.Errorf("expected kitchen device in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "<enabled>0</enabled>") {
+		t.Errorf("expected saved disabled device to remain disabled in XML, got:\n%s", out)
+	}
+}
+
 func TestRunNoArgs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if err := run(context.Background(), nil, &stdout, &stderr, discovery.Fake{}); err == nil {
@@ -71,8 +93,8 @@ func TestRunDryRunWithDiscoveredDevices(t *testing.T) {
 	if !strings.Contains(out, "<udn>kitchen-id</udn>") {
 		t.Errorf("expected device udn in generated XML, got:\n%s", out)
 	}
-	if !strings.Contains(out, "<enabled>0</enabled>") {
-		t.Errorf("expected discovered device to be disabled-by-default in XML, got:\n%s", out)
+	if !strings.Contains(out, "<enabled>1</enabled>") {
+		t.Errorf("expected discovered device to be enabled-by-default in XML, got:\n%s", out)
 	}
 }
 

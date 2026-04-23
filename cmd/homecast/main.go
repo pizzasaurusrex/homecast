@@ -98,13 +98,23 @@ func loadOrDefault(path string) (*config.Config, error) {
 // config.Device rows for aircast XML generation.
 func mergeForXML(cfg *config.Config, discovered []discovery.Device) *config.Config {
 	merged := devices.Merge(cfg.Devices, discovered)
+	savedByID := make(map[string]struct{}, len(cfg.Devices))
+	for _, d := range cfg.Devices {
+		savedByID[d.ID] = struct{}{}
+	}
 	out := *cfg
 	out.Devices = make([]config.Device, 0, len(merged))
 	for _, m := range merged {
+		enabled := m.Enabled
+		if m.Discovered {
+			if _, wasSaved := savedByID[m.ID]; !wasSaved {
+				enabled = true
+			}
+		}
 		out.Devices = append(out.Devices, config.Device{
 			ID:      m.ID,
 			Name:    m.Name,
-			Enabled: m.Enabled,
+			Enabled: enabled,
 		})
 	}
 	return &out
