@@ -25,7 +25,7 @@ the same commit. Use merged PR links as the audit trail.
 | M1        | ✅ done (2026-04-22) | Skeleton, CI, cross-compile release. [v0.0.1](https://github.com/pizzasaurusrex/homecast/releases/tag/v0.0.1) |
 | M2        | ✅ done (2026-04-22) | config, discovery, bridge packages, `--dry-run` end-to-end works against real Google Homes. Coverage ≥80% on every package. |
 | M3        | ✅ done (2026-04-23) | HTTP API + embedded web UI. All 4 slices merged ([PR #3](https://github.com/pizzasaurusrex/homecast/pull/3)–[#6](https://github.com/pizzasaurusrex/homecast/pull/6)). Pi E2E smoke-test is manual (requires hardware). |
-| M4        | 🚧 in flight   | Installer, systemd, Docker-based integration test. Scripts + service + integration test + README quickstart on `feat/m4-installer`. |
+| M4        | ✅ done (2026-04-23) | Installer, systemd, Docker-based integration test. [v0.1.0](https://github.com/pizzasaurusrex/homecast/releases/tag/v0.1.0) |
 | M5        | ⏳ stretch     | iOS Shortcuts pack                                |
 
 ### Recent fixes
@@ -34,9 +34,8 @@ the same commit. Use merged PR links as the audit trail.
 
 ### Next actions (in order)
 
-1. Merge `feat/m4-installer` PR — scripts/install.sh + uninstall.sh, systemd unit, Docker integration test, README quickstart.
-2. Manual E2E on the Pi: flash Pi OS, run the one-line installer, prove an iPhone can AirPlay to a Google Home end-to-end. This gates M3+M4 done.
-3. M5 (stretch): iOS Shortcuts pack.
+1. Manual E2E on the Pi: flash Pi OS, run the one-line installer, prove an iPhone can AirPlay to a Google Home end-to-end (smoke-test checklist in README).
+2. M5 (stretch): iOS Shortcuts pack.
 
 ### Deferred follow-ups
 
