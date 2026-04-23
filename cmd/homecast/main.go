@@ -7,26 +7,32 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/pizzasaurusrex/homecast/internal/bridge"
 	"github.com/pizzasaurusrex/homecast/internal/config"
+	"github.com/pizzasaurusrex/homecast/internal/devices"
 	"github.com/pizzasaurusrex/homecast/internal/discovery"
 	"github.com/pizzasaurusrex/homecast/internal/version"
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout, os.Stderr, discovery.New()); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx, os.Args[1:], os.Stdout, os.Stderr, discovery.New()); err != nil {
 		os.Exit(1)
 	}
 }
 
-func run(args []string, stdout, stderr io.Writer, disc discovery.Discoverer) error {
+func run(ctx context.Context, args []string, stdout, stderr io.Writer, disc discovery.Discoverer) error {
 	fs := flag.NewFlagSet("homecast", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	showVersion := fs.Bool("version", false, "print version and exit")
 	dryRun := fs.Bool("dry-run", false, "discover devices and print the AirConnect config that would be generated")
-	configPath := fs.String("config", "", "path to config file (default: built-in defaults)")
+	serve := fs.Bool("serve", false, "run the HTTP daemon: API + embedded web UI + AirConnect supervisor")
+	configPath := fs.String("config", "", "path to config file (default: built-in defaults for --dry-run; required for --serve)")
 	discoverTimeout := fs.Duration("discover-timeout", 3*time.Second, "mDNS discovery timeout for --dry-run")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -38,7 +44,14 @@ func run(args []string, stdout, stderr io.Writer, disc discovery.Discoverer) err
 	if *dryRun {
 		return doDryRun(stdout, stderr, disc, *configPath, *discoverTimeout)
 	}
-	fmt.Fprintln(stderr, "homecast: no command given (try --version or --dry-run)")
+	if *serve {
+		if *configPath == "" {
+			fmt.Fprintln(stderr, "homecast: --serve requires --config <path> so device toggles can persist")
+			return errors.New("--serve requires --config")
+		}
+		return doServe(ctx, stdout, stderr, *configPath, disc)
+	}
+	fmt.Fprintln(stderr, "homecast: no command given (try --version, --dry-run, or --serve)")
 	return errors.New("no command")
 }
 
@@ -61,7 +74,7 @@ func doDryRun(stdout, stderr io.Writer, disc discovery.Discoverer, configPath st
 		}
 	}
 
-	merged := mergeDevices(cfg, found)
+	merged := mergeForXML(cfg, found)
 	fmt.Fprintln(stdout, "\nGenerated AirConnect config:")
 	xmlBytes, err := bridge.GenerateAirConnectXML(merged)
 	if err != nil {
@@ -80,30 +93,19 @@ func loadOrDefault(path string) (*config.Config, error) {
 	return config.Load(path)
 }
 
-// mergeDevices returns a new *Config whose Devices is the union of the
-// configured devices and the freshly discovered ones; discovered devices not
-// present in the saved config are added as disabled (user opts in via UI).
-func mergeDevices(cfg *config.Config, discovered []discovery.Device) *config.Config {
-	byID := make(map[string]config.Device, len(cfg.Devices)+len(discovered))
-	for _, d := range cfg.Devices {
-		byID[d.ID] = d
-	}
-	for _, d := range discovered {
-		if _, ok := byID[d.ID]; !ok {
-			byID[d.ID] = config.Device{ID: d.ID, Name: d.Name, Enabled: false}
-		}
-	}
+// mergeForXML returns a *Config whose Devices list is the canonical merge of
+// saved + discovered produced by internal/devices.Merge, projected back to
+// config.Device rows for aircast XML generation.
+func mergeForXML(cfg *config.Config, discovered []discovery.Device) *config.Config {
+	merged := devices.Merge(cfg.Devices, discovered)
 	out := *cfg
-	out.Devices = make([]config.Device, 0, len(byID))
-	for _, d := range cfg.Devices {
-		out.Devices = append(out.Devices, byID[d.ID])
-		delete(byID, d.ID)
-	}
-	for _, d := range discovered {
-		if dev, ok := byID[d.ID]; ok {
-			out.Devices = append(out.Devices, dev)
-			delete(byID, d.ID)
-		}
+	out.Devices = make([]config.Device, 0, len(merged))
+	for _, m := range merged {
+		out.Devices = append(out.Devices, config.Device{
+			ID:      m.ID,
+			Name:    m.Name,
+			Enabled: m.Enabled,
+		})
 	}
 	return &out
 }
