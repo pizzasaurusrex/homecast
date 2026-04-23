@@ -1,0 +1,18 @@
+[Unit]
+Description=homecast — AirPlay bridge for Google Home / Nest speakers
+Documentation=https://github.com/pizzasaurusrex/homecast
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=homecast
+ExecStart=/usr/local/bin/homecast --serve --config /etc/homecast/config.yaml
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=homecast
+
+[Install]
+WantedBy=multi-user.target
