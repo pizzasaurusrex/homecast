@@ -24,7 +24,7 @@ the same commit. Use merged PR links as the audit trail.
 |-----------|----------------|---------------------------------------------------|
 | M1        | ✅ done (2026-04-22) | Skeleton, CI, cross-compile release. [v0.0.1](https://github.com/pizzasaurusrex/homecast/releases/tag/v0.0.1) |
 | M2        | ✅ done (2026-04-22) | config, discovery, bridge packages, `--dry-run` end-to-end works against real Google Homes. Coverage ≥80% on every package. |
-| M3        | 🚧 in flight   | HTTP API + embedded web UI. Sliced 1/4 → 4/4; slice 1 (`internal/logs` ring buffer) in review. |
+| M3        | 🚧 in flight   | HTTP API + embedded web UI. Slice 1 (`internal/logs`) merged [PR #3](https://github.com/pizzasaurusrex/homecast/pull/3); slice 2 (`internal/api` handlers) in review. |
 | M4        | ⏳ pending     | Installer, systemd, Docker-based integration test |
 | M5        | ⏳ stretch     | iOS Shortcuts pack                                |
 

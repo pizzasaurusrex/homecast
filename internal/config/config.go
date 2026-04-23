@@ -12,25 +12,25 @@ import (
 )
 
 type Server struct {
-	Listen string `yaml:"listen"`
+	Listen string `yaml:"listen" json:"listen"`
 }
 
 type AirConnect struct {
-	BinaryPath  string `yaml:"binary_path"`
-	LogPath     string `yaml:"log_path"`
-	AutoRestart bool   `yaml:"auto_restart"`
+	BinaryPath  string `yaml:"binary_path" json:"binaryPath"`
+	LogPath     string `yaml:"log_path" json:"logPath"`
+	AutoRestart bool   `yaml:"auto_restart" json:"autoRestart"`
 }
 
 type Device struct {
-	ID      string `yaml:"id"`
-	Name    string `yaml:"name"`
-	Enabled bool   `yaml:"enabled"`
+	ID      string `yaml:"id" json:"id"`
+	Name    string `yaml:"name" json:"name"`
+	Enabled bool   `yaml:"enabled" json:"enabled"`
 }
 
 type Config struct {
-	Server     Server     `yaml:"server"`
-	AirConnect AirConnect `yaml:"airconnect"`
-	Devices    []Device   `yaml:"devices"`
+	Server     Server     `yaml:"server" json:"server"`
+	AirConnect AirConnect `yaml:"airconnect" json:"airconnect"`
+	Devices    []Device   `yaml:"devices" json:"devices"`
 }
 
 func Default() *Config {
