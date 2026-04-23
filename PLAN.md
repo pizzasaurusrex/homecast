@@ -24,7 +24,7 @@ the same commit. Use merged PR links as the audit trail.
 |-----------|----------------|---------------------------------------------------|
 | M1        | ✅ done (2026-04-22) | Skeleton, CI, cross-compile release. [v0.0.1](https://github.com/pizzasaurusrex/homecast/releases/tag/v0.0.1) |
 | M2        | ✅ done (2026-04-22) | config, discovery, bridge packages, `--dry-run` end-to-end works against real Google Homes. Coverage ≥80% on every package. |
-| M3        | 🚧 in flight   | HTTP API + embedded web UI. Sliced 1/4 → 4/4; slice 1 (`internal/logs` ring buffer) in review. |
+| M3        | 🚧 in flight   | HTTP API + embedded web UI. Slice 1 (`internal/logs`) merged [PR #3](https://github.com/pizzasaurusrex/homecast/pull/3); slice 2 (`internal/api` handlers) in review. |
 | M4        | ⏳ pending     | Installer, systemd, Docker-based integration test |
 | M5        | ⏳ stretch     | iOS Shortcuts pack                                |
 
@@ -35,11 +35,15 @@ the same commit. Use merged PR links as the audit trail.
 ### Next actions (in order)
 
 1. M3 is sliced into four PRs to keep each reviewable:
-   1. `internal/logs` ring-buffer `io.Writer` (in review).
-   2. `internal/api` stdlib `net/http` mux + JSON handlers (`httptest` tested).
+   1. `internal/logs` ring-buffer `io.Writer` (merged, [PR #3](https://github.com/pizzasaurusrex/homecast/pull/3)).
+   2. `internal/api` stdlib `net/http` mux + JSON handlers ([PR #4](https://github.com/pizzasaurusrex/homecast/pull/4); review follow-up commit pending).
    3. `web/` vanilla HTML/CSS/JS UI served via `embed` (decision: no framework — see `project_ui_framework_decision.md`).
    4. Wire serve mode into `cmd/homecast`; extract saved⨯discovered device merge so `--dry-run` and the API share one source of truth.
 2. Manual E2E on the Pi: prove an iPhone can AirPlay to a Google Home via the bridge controlled from the UI.
+
+### Deferred follow-ups
+
+- **mDNS TTL cache for `/api/devices`** — every GET currently triggers a 3 s mDNS browse. A polling UI will flood the LAN and stall each call. Add a short TTL cache (10–30 s) with an explicit `?refresh=1` bypass. File once slice 4 lands so we have real traffic to measure.
 
 ### Open questions still deferred
 
