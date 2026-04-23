@@ -13,31 +13,63 @@ Coming in M4. For now, see the plan.
 
 ## Develop
 
-### Run locally (Mac)
+### Run locally (Mac) — full e2e
+
+**1. Build the binary**
 
 ```sh
-# Build
 go build ./cmd/homecast
+```
 
-# Start the server (UI + API) using the sample config
-./homecast --serve --config airconnect.yaml
-# → homecast: listening on http://0.0.0.0:8080
+**2. Download AirConnect for macOS**
+
+```sh
+curl -L -o /tmp/airconnect.zip \
+  https://github.com/philippe44/AirConnect/releases/download/1.9.3/AirConnect-1.9.3.zip
+
+# Apple Silicon (M1/M2/M3/M4) — use the static build to avoid macOS libcrypto issues:
+unzip -j /tmp/airconnect.zip aircast-macos-arm64-static -d .
+mv aircast-macos-arm64-static aircast
+
+# Intel Mac (x86_64):
+# unzip -j /tmp/airconnect.zip aircast-macos-x86_64-static -d .
+# mv aircast-macos-x86_64-static aircast
+
+chmod +x aircast
+xattr -d com.apple.quarantine aircast 2>/dev/null || true  # remove Gatekeeper quarantine if needed
+```
+
+**3. Create a local config**
+
+Copy the sample config and point it at your local binary:
+
+```sh
+cp airconnect.yaml airconnect.local.yaml
+```
+
+Edit `airconnect.local.yaml` and update `binary_path`:
+
+```yaml
+airconnect:
+  binary_path: ./aircast   # ← change this line
+```
+
+`airconnect.local.yaml` is gitignored — safe to customize without committing.
+
+**4. Discover your Cast devices** (optional, to populate the `devices` list)
+
+```sh
+./homecast --dry-run --config airconnect.local.yaml
+```
+
+**5. Start the server**
+
+```sh
+./homecast --serve --config airconnect.local.yaml
+# → homecast: listening on http://[::]:8080
 ```
 
 Open [http://localhost:8080](http://localhost:8080) in your browser.
-
-> **Note:** The AirConnect binary path in `airconnect.yaml` (`/usr/local/lib/homecast/aircast`)
-> does not exist on Mac. The supervisor will log a warning and skip starting AirConnect,
-> but the web UI and all API endpoints remain fully functional for development.
-
-### Dry-run (device discovery only)
-
-```sh
-# Discover Cast devices on the network and print the AirConnect config that would be generated
-./homecast --dry-run
-# or with a saved config:
-./homecast --dry-run --config airconnect.yaml
-```
 
 ### Tests
 
