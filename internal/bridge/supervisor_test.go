@@ -60,6 +60,34 @@ func TestSupervisorStartNonexistentBinary(t *testing.T) {
 	}
 }
 
+func TestSupervisorStartedAt(t *testing.T) {
+	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard)
+	if got := sup.StartedAt(); !got.IsZero() {
+		t.Fatalf("initial StartedAt = %v, want zero", got)
+	}
+	before := time.Now()
+	if err := sup.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = sup.Stop(2 * time.Second) })
+	after := time.Now()
+
+	got := sup.StartedAt()
+	if got.IsZero() {
+		t.Fatal("StartedAt after Start returned zero time")
+	}
+	if got.Before(before) || got.After(after) {
+		t.Errorf("StartedAt = %v, want in [%v, %v]", got, before, after)
+	}
+
+	if err := sup.Stop(2 * time.Second); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := sup.StartedAt(); !got.IsZero() {
+		t.Errorf("StartedAt after Stop = %v, want zero", got)
+	}
+}
+
 func TestSupervisorRestart(t *testing.T) {
 	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard)
 	if err := sup.Start(context.Background()); err != nil {

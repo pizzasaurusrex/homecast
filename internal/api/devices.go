@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/pizzasaurusrex/homecast/internal/config"
+	"github.com/pizzasaurusrex/homecast/internal/devices"
 	"github.com/pizzasaurusrex/homecast/internal/discovery"
 )
 
@@ -21,7 +22,18 @@ type deviceView struct {
 func (s *server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	cfg := s.opts.Config.Snapshot()
 	found := s.browse(r.Context())
-	writeJSON(w, http.StatusOK, mergeDevices(cfg.Devices, found))
+	merged := devices.Merge(cfg.Devices, found)
+	views := make([]deviceView, len(merged))
+	for i, m := range merged {
+		views[i] = deviceView{
+			ID:         m.ID,
+			Name:       m.Name,
+			Enabled:    m.Enabled,
+			Discovered: m.Discovered,
+			Addrs:      m.Addrs,
+		}
+	}
+	writeJSON(w, http.StatusOK, views)
 }
 
 func (s *server) handleDeviceEnable(w http.ResponseWriter, r *http.Request) {
@@ -90,43 +102,4 @@ func findDiscovered(devices []discovery.Device, id string) (discovery.Device, bo
 		}
 	}
 	return discovery.Device{}, false
-}
-
-func mergeDevices(saved []config.Device, discovered []discovery.Device) []deviceView {
-	discByID := make(map[string]discovery.Device, len(discovered))
-	for _, d := range discovered {
-		if d.ID == "" {
-			continue
-		}
-		discByID[d.ID] = d
-	}
-
-	seen := make(map[string]struct{}, len(saved)+len(discovered))
-	out := make([]deviceView, 0, len(saved)+len(discovered))
-
-	for _, d := range saved {
-		disc, ok := discByID[d.ID]
-		view := deviceView{ID: d.ID, Name: d.Name, Enabled: d.Enabled, Discovered: ok}
-		if ok {
-			view.Addrs = append([]string(nil), disc.Addrs...)
-		}
-		out = append(out, view)
-		seen[d.ID] = struct{}{}
-	}
-	for _, d := range discovered {
-		if d.ID == "" || d.Name == "" {
-			continue
-		}
-		if _, already := seen[d.ID]; already {
-			continue
-		}
-		out = append(out, deviceView{
-			ID:         d.ID,
-			Name:       d.Name,
-			Enabled:    false,
-			Discovered: true,
-			Addrs:      append([]string(nil), d.Addrs...),
-		})
-	}
-	return out
 }
