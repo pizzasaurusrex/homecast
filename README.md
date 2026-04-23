@@ -33,6 +33,20 @@ curl -fsSL https://raw.githubusercontent.com/pizzasaurusrex/homecast/main/script
 # Add --purge to also remove config and logs
 ```
 
+### Verify your install
+
+After the installer finishes, run through this checklist:
+
+- [ ] `systemctl status homecast` shows `active (running)`
+- [ ] `http://homecast.local:8080` loads the dashboard in a browser
+- [ ] The dashboard lists your Google Home / Nest speakers under Devices
+- [ ] Toggling a device on and clicking Restart Bridge starts AirConnect
+- [ ] An iPhone sees the speaker in the AirPlay picker (Control Centre → AirPlay)
+- [ ] Audio plays through the speaker from Apple Music
+
+If a speaker doesn't appear, check that the Pi and speaker are on the same subnet
+and that mDNS traffic isn't blocked by your router.
+
 ## Develop
 
 ### Run locally (Mac) — full e2e
