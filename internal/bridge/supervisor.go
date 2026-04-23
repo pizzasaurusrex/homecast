@@ -26,10 +26,11 @@ type Supervisor struct {
 	args   []string
 	logOut io.Writer
 
-	mu    sync.Mutex
-	cmd   *exec.Cmd
-	state State
-	done  chan struct{}
+	mu        sync.Mutex
+	cmd       *exec.Cmd
+	state     State
+	done      chan struct{}
+	startedAt time.Time
 }
 
 func NewSupervisor(binary string, args []string, logOut io.Writer) *Supervisor {
@@ -50,6 +51,14 @@ func (s *Supervisor) State() State {
 	return s.state
 }
 
+// StartedAt returns the wall-clock time the currently-running child started,
+// or the zero time when the supervisor is not running.
+func (s *Supervisor) StartedAt() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.startedAt
+}
+
 func (s *Supervisor) Start(ctx context.Context) error {
 	s.mu.Lock()
 	if s.state == StateRunning || s.state == StateStopping {
@@ -67,6 +76,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	s.cmd = cmd
 	s.done = done
 	s.state = StateRunning
+	s.startedAt = time.Now()
 	s.mu.Unlock()
 
 	go func() {
@@ -74,6 +84,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 		s.mu.Lock()
 		s.state = StateStopped
 		s.cmd = nil
+		s.startedAt = time.Time{}
 		s.mu.Unlock()
 		close(done)
 	}()
