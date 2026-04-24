@@ -74,7 +74,7 @@ info "Detected architecture: $ARCH"
 # Resolve download URLs
 if [[ -z "${HOMECAST_BINARY_URL:-}" ]]; then
     info "Fetching latest homecast release..."
-    HOMECAST_BINARY_URL="$(latest_release_asset "$HOMECAST_REPO" "homecast_linux_${ARCH}")"
+    HOMECAST_BINARY_URL="$(latest_release_asset "$HOMECAST_REPO" "homecast-.*-linux-${ARCH}")"
 fi
 
 if [[ -z "${AIRCAST_BINARY_URL:-}" ]]; then
