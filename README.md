@@ -13,7 +13,7 @@ Flash a Raspberry Pi with [Raspberry Pi OS](https://www.raspberrypi.com/software
 SSH in, and run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/pizzasaurusrex/homecast/main/scripts/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/pizzasaurusrex/homecast/main/scripts/install.sh | sudo bash
 ```
 
 The script will:
@@ -29,7 +29,7 @@ them from the AirPlay menu on your iPhone.
 ### Uninstall
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/pizzasaurusrex/homecast/main/scripts/uninstall.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/pizzasaurusrex/homecast/main/scripts/uninstall.sh | sudo bash
 # Add --purge to also remove config and logs
 ```
 
