@@ -43,6 +43,16 @@ detect_arch() {
     esac
 }
 
+# AirConnect uses different arch names than we do.
+aircast_arch() {
+    case "$1" in
+        arm64) echo "aarch64" ;;
+        armv7) echo "arm"     ;;
+        amd64) echo "x86_64"  ;;
+        *)     error "No aircast arch mapping for: $1" ;;
+    esac
+}
+
 latest_release_asset() {
     local repo="$1" pattern="$2"
     local url
@@ -63,6 +73,24 @@ download() {
     fi
 }
 
+# AirConnect ships a single ZIP; extract the binary for our arch.
+download_aircast() {
+    local arch="$1" dest="$2"
+    local ac_arch zip_url zip_tmp entry
+    ac_arch="$(aircast_arch "$arch")"
+    entry="aircast-linux-${ac_arch}"
+
+    info "Fetching latest AirConnect release..."
+    zip_url="$(latest_release_asset "$AIRCONNECT_REPO" "AirConnect-.*\.zip")"
+
+    zip_tmp="$(mktemp --suffix=.zip)"
+    info "Downloading AirConnect..."
+    curl -fsSL -o "$zip_tmp" "$zip_url"
+    unzip -p "$zip_tmp" "$entry" > "$dest"
+    rm -f "$zip_tmp"
+    chmod +x "$dest"
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -77,10 +105,6 @@ if [[ -z "${HOMECAST_BINARY_URL:-}" ]]; then
     HOMECAST_BINARY_URL="$(latest_release_asset "$HOMECAST_REPO" "homecast-.*-linux-${ARCH}")"
 fi
 
-if [[ -z "${AIRCAST_BINARY_URL:-}" ]]; then
-    info "Fetching latest AirConnect release..."
-    AIRCAST_BINARY_URL="$(latest_release_asset "$AIRCONNECT_REPO" "aircast-linux-${ARCH}")"
-fi
 
 # Create directories
 info "Creating directories..."
@@ -100,11 +124,14 @@ chmod +x "$TMP_HC"
 mv "$TMP_HC" "$HOMECAST_BIN"
 
 # Download aircast binary
-info "Downloading aircast..."
-TMP_AC="$(mktemp)"
-download "$AIRCAST_BINARY_URL" "$TMP_AC"
-chmod +x "$TMP_AC"
-mv "$TMP_AC" "$AIRCAST_BIN"
+if [[ -n "${AIRCAST_BINARY_URL:-}" ]]; then
+    TMP_AC="$(mktemp)"
+    download "$AIRCAST_BINARY_URL" "$TMP_AC"
+    chmod +x "$TMP_AC"
+    mv "$TMP_AC" "$AIRCAST_BIN"
+else
+    download_aircast "$ARCH" "$AIRCAST_BIN"
+fi
 
 # Write default config (only if not already present)
 if [[ ! -f "$CONFIG_FILE" ]]; then

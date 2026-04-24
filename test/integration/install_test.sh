@@ -28,7 +28,7 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -qq && apt-get install -y -qq \
-    curl ca-certificates python3 adduser \
+    curl ca-certificates python3 adduser unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Fake systemctl: records calls, always succeeds.
