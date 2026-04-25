@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -34,14 +33,8 @@ func (s *server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, view)
 }
 
-// handleBridgeRestart intentionally detaches from r.Context() so that a client
-// disconnect mid-restart does not kill the freshly-started AirConnect child
-// (bridge.Supervisor.Start uses exec.CommandContext, which tears down the
-// process when the context is cancelled).
 func (s *server) handleBridgeRestart(w http.ResponseWriter, _ *http.Request) {
-	ctx, cancel := context.WithTimeout(context.Background(), s.opts.RestartTimeout)
-	defer cancel()
-	if err := s.opts.Supervisor.Restart(ctx, s.opts.RestartTimeout); err != nil {
+	if err := s.opts.Supervisor.Restart(s.opts.RestartTimeout); err != nil {
 		s.internalError(w, "failed to restart bridge", err)
 		return
 	}

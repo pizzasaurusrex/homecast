@@ -31,7 +31,7 @@ type stubSupervisor struct {
 
 func (s *stubSupervisor) State() bridge.State  { return s.state }
 func (s *stubSupervisor) StartedAt() time.Time { return s.startedAt }
-func (s *stubSupervisor) Restart(_ context.Context, _ time.Duration) error {
+func (s *stubSupervisor) Restart(_ time.Duration) error {
 	s.restarts++
 	s.startedAt = time.Now()
 	return nil
