@@ -59,17 +59,15 @@ func (f *fakeConfigStore) UpsertDevice(d config.Device) error {
 }
 
 type fakeSupervisor struct {
-	state        bridge.State
-	startedAt    time.Time
-	restartErr   error
-	restarts     int
-	ctxErrAtCall error
+	state      bridge.State
+	startedAt  time.Time
+	restartErr error
+	restarts   int
 }
 
 func (f *fakeSupervisor) State() bridge.State  { return f.state }
 func (f *fakeSupervisor) StartedAt() time.Time { return f.startedAt }
-func (f *fakeSupervisor) Restart(ctx context.Context, _ time.Duration) error {
-	f.ctxErrAtCall = ctx.Err()
+func (f *fakeSupervisor) Restart(_ time.Duration) error {
 	f.restarts++
 	return f.restartErr
 }
@@ -421,10 +419,9 @@ func TestBridgeRestart_SupervisorError_500_Generic(t *testing.T) {
 	}
 }
 
-func TestBridgeRestart_UsesDetachedContext(t *testing.T) {
-	// If the client disconnects mid-restart, the supervisor's child process
-	// (started via exec.CommandContext) must not get killed along with the
-	// request. The handler must pass a context independent of r.Context().
+func TestBridgeRestart_CompletesWithCancelledRequestContext(t *testing.T) {
+	// Client disconnect must not prevent a restart from completing.
+	// The handler must not propagate r.Context() into the restart path.
 	sup := &fakeSupervisor{state: bridge.StateRunning}
 	h := newTestHandler(t, Options{Supervisor: sup})
 
@@ -437,8 +434,8 @@ func TestBridgeRestart_UsesDetachedContext(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("code: %d body=%s", w.Code, w.Body.String())
 	}
-	if sup.ctxErrAtCall != nil {
-		t.Fatalf("restart ran with cancelled context: %v", sup.ctxErrAtCall)
+	if sup.restarts != 1 {
+		t.Fatalf("expected 1 restart even with cancelled request context, got %d", sup.restarts)
 	}
 }
 

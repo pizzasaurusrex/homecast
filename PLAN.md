@@ -41,6 +41,8 @@ the same commit. Use merged PR links as the audit trail.
 
 - **mDNS TTL cache for `/api/devices`** — every GET currently triggers a 3 s mDNS browse. A polling UI will flood the LAN and stall each call. Add a short TTL cache (10–30 s) with an explicit `?refresh=1` bypass. File once slice 4 lands on a real Pi so we have real traffic to measure.
 - **Bridge auto-restart on crash** — `config.AirConnect.AutoRestart` is parsed but `bridge.Supervisor` does not yet honour it. Today a crashed AirConnect stays down until the user hits /api/bridge/restart. Add an exponential-backoff watcher in the supervisor; this was originally an M2 target that slipped.
+- **`/api/config` leaks filesystem paths** — the full config snapshot including `AirConnect.BinaryPath` is returned. On a hostile LAN this aids path-based attacks. For v2 consider either omitting sensitive fields or restricting the endpoint to loopback. Low priority while the LAN-only assumption holds.
+- **`Supervisor.Stop` double-SIGTERM on concurrent callers** — if two goroutines race to call `Stop` while the child is running, both enter the `StateStopping` branch, send SIGTERM, and wait on the same `done` channel. Both unblock safely when the child exits and ESRCH is suppressed, so there is no observable bug today. An early-return on `StateStopping` would make the intent explicit and prevent a spurious second signal if the process happens to reuse its PID before the second SIGTERM is sent. Low priority — only one caller (`runServer`) drives Stop in practice.
 
 ### Open questions still deferred
 

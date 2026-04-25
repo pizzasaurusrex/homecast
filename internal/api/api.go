@@ -2,7 +2,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -24,7 +23,7 @@ type ConfigStore interface {
 type Supervisor interface {
 	State() bridge.State
 	StartedAt() time.Time
-	Restart(ctx context.Context, timeout time.Duration) error
+	Restart(timeout time.Duration) error
 }
 
 // LogTailer returns the most recent N log lines, oldest first.
@@ -83,9 +82,9 @@ type server struct {
 // envelope is the JSON response wrapper. Ok is always set; Data is populated on
 // success, Error on failure.
 type envelope struct {
-	Ok    bool        `json:"ok"`
-	Data  interface{} `json:"data,omitempty"`
-	Error string      `json:"error,omitempty"`
+	Ok    bool   `json:"ok"`
+	Data  any    `json:"data,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

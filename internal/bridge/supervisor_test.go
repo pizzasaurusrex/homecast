@@ -95,7 +95,7 @@ func TestSupervisorRestart(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sup.Stop(2 * time.Second) })
 
-	if err := sup.Restart(context.Background(), 2*time.Second); err != nil {
+	if err := sup.Restart(2 * time.Second); err != nil {
 		t.Fatalf("Restart: %v", err)
 	}
 	if got := sup.State(); got != StateRunning {

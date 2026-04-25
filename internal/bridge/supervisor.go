@@ -144,11 +144,15 @@ func (s *Supervisor) Stop(timeout time.Duration) error {
 	}
 }
 
-func (s *Supervisor) Restart(ctx context.Context, timeout time.Duration) error {
+// Restart stops the child with the given timeout and starts a fresh one.
+// The new child is always started with context.Background() so it runs until
+// explicitly stopped — callers must not pass a short-lived context expecting
+// it to bound the child's lifetime.
+func (s *Supervisor) Restart(timeout time.Duration) error {
 	if err := s.Stop(timeout); err != nil {
 		return err
 	}
-	return s.Start(ctx)
+	return s.Start(context.Background())
 }
 
 // Watch starts a background goroutine that restarts the supervised process
