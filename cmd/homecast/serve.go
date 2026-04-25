@@ -36,13 +36,13 @@ func doServe(ctx context.Context, stdout, stderr io.Writer, configPath string, d
 	cfg := store.Snapshot()
 
 	logBuf := logs.NewBuffer(logBufferLines)
-	sup := bridge.NewSupervisor(cfg.AirConnect.BinaryPath, nil, logBuf)
+	sup := bridge.NewSupervisor(cfg.AirConnect.BinaryPath, nil, logBuf, cfg.AirConnect.AutoRestart)
 	if err := sup.Start(context.Background()); err != nil {
 		// Non-fatal: the UI still wants to be reachable so the operator can
-		// inspect logs / fix config / hit restart. Auto-restart-on-crash
-		// (config.AirConnect.AutoRestart) is an unfinished M2 follow-up.
+		// inspect logs / fix config / hit restart.
 		fmt.Fprintf(stderr, "homecast: supervisor failed to start AirConnect (%v); continuing so UI stays up\n", err)
 	}
+	sup.Watch(ctx)
 
 	mux := buildServeMux(store, disc, sup, logBuf)
 

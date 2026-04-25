@@ -22,26 +22,35 @@ const (
 var ErrAlreadyRunning = errors.New("supervisor already running")
 
 type Supervisor struct {
-	binary string
-	args   []string
-	logOut io.Writer
+	binary      string
+	args        []string
+	logOut      io.Writer
+	autoRestart bool
+	initBackoff time.Duration // default time.Second; override in tests
 
-	mu        sync.Mutex
-	cmd       *exec.Cmd
-	state     State
-	done      chan struct{}
-	startedAt time.Time
+	mu           sync.Mutex
+	cmd          *exec.Cmd
+	state        State
+	done         chan struct{}
+	startedAt    time.Time
+	restartCount int
+
+	crashNotify chan struct{}
+	watchOnce   sync.Once
 }
 
-func NewSupervisor(binary string, args []string, logOut io.Writer) *Supervisor {
+func NewSupervisor(binary string, args []string, logOut io.Writer, autoRestart bool) *Supervisor {
 	if logOut == nil {
 		logOut = io.Discard
 	}
 	return &Supervisor{
-		binary: binary,
-		args:   append([]string(nil), args...),
-		logOut: logOut,
-		state:  StateStopped,
+		binary:      binary,
+		args:        append([]string(nil), args...),
+		logOut:      logOut,
+		autoRestart: autoRestart,
+		initBackoff: time.Second,
+		state:       StateStopped,
+		crashNotify: make(chan struct{}, 1),
 	}
 }
 
@@ -57,6 +66,14 @@ func (s *Supervisor) StartedAt() time.Time {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.startedAt
+}
+
+// RestartCount returns the number of times Watch has successfully restarted
+// the child process after an unexpected exit.
+func (s *Supervisor) RestartCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.restartCount
 }
 
 func (s *Supervisor) Start(ctx context.Context) error {
@@ -82,11 +99,18 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	go func() {
 		_ = cmd.Wait()
 		s.mu.Lock()
+		crashed := s.state == StateRunning // StateStopping means deliberate Stop()
 		s.state = StateStopped
 		s.cmd = nil
 		s.startedAt = time.Time{}
 		s.mu.Unlock()
 		close(done)
+		if crashed {
+			select {
+			case s.crashNotify <- struct{}{}:
+			default:
+			}
+		}
 	}()
 	return nil
 }
@@ -125,4 +149,48 @@ func (s *Supervisor) Restart(ctx context.Context, timeout time.Duration) error {
 		return err
 	}
 	return s.Start(ctx)
+}
+
+// Watch starts a background goroutine that restarts the supervised process
+// after unexpected exits using exponential backoff. It is a no-op when
+// autoRestart is false. Watch is idempotent — calling it multiple times starts
+// only one watcher goroutine. The watcher stops when ctx is cancelled.
+func (s *Supervisor) Watch(ctx context.Context) {
+	if !s.autoRestart {
+		return
+	}
+	s.watchOnce.Do(func() {
+		go s.watchLoop(ctx)
+	})
+}
+
+func (s *Supervisor) watchLoop(ctx context.Context) {
+	const maxBackoff = 2 * time.Minute
+	backoff := s.initBackoff
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.crashNotify:
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		// Use context.Background() so the child is not killed by ctx cancellation
+		// during shutdown — Stop() drives the graceful teardown instead.
+		if err := s.Start(context.Background()); err == nil {
+			s.mu.Lock()
+			s.restartCount++
+			s.mu.Unlock()
+		} else {
+			// Binary not found or other hard error; re-enqueue so we keep trying.
+			select {
+			case s.crashNotify <- struct{}{}:
+			default:
+			}
+		}
+		backoff = min(backoff*2, maxBackoff)
+	}
 }

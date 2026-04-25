@@ -12,7 +12,7 @@ import (
 const sleepBin = "/bin/sleep"
 
 func TestSupervisorStartStop(t *testing.T) {
-	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard)
+	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard, false)
 	if got := sup.State(); got != StateStopped {
 		t.Fatalf("initial state = %v, want Stopped", got)
 	}
@@ -31,7 +31,7 @@ func TestSupervisorStartStop(t *testing.T) {
 }
 
 func TestSupervisorStartTwiceReturnsError(t *testing.T) {
-	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard)
+	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard, false)
 	if err := sup.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -44,14 +44,14 @@ func TestSupervisorStartTwiceReturnsError(t *testing.T) {
 }
 
 func TestSupervisorStopWhenNotRunningIsNoop(t *testing.T) {
-	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard)
+	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard, false)
 	if err := sup.Stop(time.Second); err != nil {
 		t.Fatalf("Stop on stopped supervisor returned error: %v", err)
 	}
 }
 
 func TestSupervisorStartNonexistentBinary(t *testing.T) {
-	sup := NewSupervisor("/definitely/does/not/exist/binary", nil, io.Discard)
+	sup := NewSupervisor("/definitely/does/not/exist/binary", nil, io.Discard, false)
 	if err := sup.Start(context.Background()); err == nil {
 		t.Fatal("expected error starting nonexistent binary")
 	}
@@ -61,7 +61,7 @@ func TestSupervisorStartNonexistentBinary(t *testing.T) {
 }
 
 func TestSupervisorStartedAt(t *testing.T) {
-	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard)
+	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard, false)
 	if got := sup.StartedAt(); !got.IsZero() {
 		t.Fatalf("initial StartedAt = %v, want zero", got)
 	}
@@ -89,7 +89,7 @@ func TestSupervisorStartedAt(t *testing.T) {
 }
 
 func TestSupervisorRestart(t *testing.T) {
-	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard)
+	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard, false)
 	if err := sup.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestSupervisorSIGKILLFallback(t *testing.T) {
 
 func TestSupervisorCapturesOutput(t *testing.T) {
 	var buf bytes.Buffer
-	sup := NewSupervisor("/bin/echo", []string{"hello-supervisor"}, &buf)
+	sup := NewSupervisor("/bin/echo", []string{"hello-supervisor"}, &buf, false)
 	if err := sup.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -126,5 +126,110 @@ func TestSupervisorCapturesOutput(t *testing.T) {
 	}
 	if got := buf.String(); got != "hello-supervisor\n" {
 		t.Errorf("captured output = %q, want %q", got, "hello-supervisor\n")
+	}
+}
+
+func TestSupervisorWatch_RestartsOnCrash(t *testing.T) {
+	// /bin/echo exits immediately — each run is an unexpected exit (crash).
+	sup := NewSupervisor("/bin/echo", []string{"watch-test"}, io.Discard, true)
+	sup.initBackoff = 50 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := sup.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	sup.Watch(ctx)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if sup.RestartCount() >= 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got := sup.RestartCount(); got < 2 {
+		t.Errorf("expected ≥2 auto-restarts, got %d", got)
+	}
+}
+
+func TestSupervisorWatch_NoopWhenAutoRestartFalse(t *testing.T) {
+	sup := NewSupervisor("/bin/echo", []string{"no-restart"}, io.Discard, false)
+	sup.initBackoff = 50 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := sup.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	sup.Watch(ctx)
+
+	// Wait for echo to exit and a bit extra to confirm no restart happens.
+	time.Sleep(300 * time.Millisecond)
+
+	if got := sup.RestartCount(); got != 0 {
+		t.Errorf("expected 0 restarts with autoRestart=false, got %d", got)
+	}
+	if got := sup.State(); got != StateStopped {
+		t.Errorf("expected Stopped, got %v", got)
+	}
+}
+
+func TestSupervisorWatch_StopsOnContextCancel(t *testing.T) {
+	sup := NewSupervisor("/bin/echo", []string{"cancel-test"}, io.Discard, true)
+	sup.initBackoff = 50 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if err := sup.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	sup.Watch(ctx)
+
+	// Let a couple of restarts happen, then cancel.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if sup.RestartCount() >= 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+
+	// Give the watcher a moment to observe cancellation, then verify
+	// RestartCount stops growing.
+	time.Sleep(100 * time.Millisecond)
+	countAfterCancel := sup.RestartCount()
+	time.Sleep(300 * time.Millisecond)
+	if got := sup.RestartCount(); got > countAfterCancel+1 {
+		t.Errorf("restart count kept growing after ctx cancel: %d → %d", countAfterCancel, got)
+	}
+}
+
+func TestSupervisorWatch_DeliberateStopDoesNotRestart(t *testing.T) {
+	sup := NewSupervisor(sleepBin, []string{"30"}, io.Discard, true)
+	sup.initBackoff = 50 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	if err := sup.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	sup.Watch(ctx)
+
+	if err := sup.Stop(2 * time.Second); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	// After deliberate Stop, watcher must not restart the process.
+	time.Sleep(300 * time.Millisecond)
+	if got := sup.RestartCount(); got != 0 {
+		t.Errorf("expected 0 restarts after deliberate Stop, got %d", got)
+	}
+	if got := sup.State(); got != StateStopped {
+		t.Errorf("expected Stopped after deliberate Stop, got %v", got)
 	}
 }

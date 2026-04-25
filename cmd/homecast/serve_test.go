@@ -238,7 +238,7 @@ func (s *syncBuf) String() string {
 func TestRunServer_ShutsDownOnContextCancel(t *testing.T) {
 	// Use a real supervisor but never start it, so Stop is a no-op and we
 	// exercise the graceful-shutdown code path without needing aircast.
-	sup := bridge.NewSupervisor("/bin/true", nil, io.Discard)
+	sup := bridge.NewSupervisor("/bin/true", nil, io.Discard, false)
 
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
@@ -277,7 +277,7 @@ func TestRunServer_ShutsDownOnContextCancel(t *testing.T) {
 }
 
 func TestRunServer_ReturnsServeError(t *testing.T) {
-	sup := bridge.NewSupervisor("/bin/true", nil, io.Discard)
+	sup := bridge.NewSupervisor("/bin/true", nil, io.Discard, false)
 	srv := &http.Server{}
 
 	// Close the listener immediately so Serve returns a real error (not
