@@ -54,7 +54,8 @@
   function setBridgeState(state) {
     const el = $('bridge-state');
     el.textContent = state || 'unknown';
-    el.className = 'value state-' + (state || 'unknown');
+    const safe = String(state || 'unknown').replace(/[^a-z0-9-]/gi, '');
+    el.className = 'value state-' + (safe || 'unknown');
   }
 
   async function refreshStatus() {

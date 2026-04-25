@@ -21,6 +21,8 @@ const (
 	httpShutdownGrace = 5 * time.Second
 	bridgeStopGrace   = 5 * time.Second
 	httpReadHeader    = 5 * time.Second
+	httpReadTimeout   = 30 * time.Second
+	httpWriteTimeout  = 30 * time.Second
 )
 
 // doServe loads config, wires the supervisor + API + UI, and blocks until
@@ -50,6 +52,8 @@ func doServe(ctx context.Context, stdout, stderr io.Writer, configPath string, d
 		Addr:              cfg.Server.Listen,
 		Handler:           mux,
 		ReadHeaderTimeout: httpReadHeader,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
 	}
 
 	listener, err := net.Listen("tcp", cfg.Server.Listen)
@@ -107,5 +111,19 @@ func buildServeMux(store api.ConfigStore, disc discovery.Discoverer, sup api.Sup
 		Logs:       logBuf,
 	}))
 	mux.Handle("/", web.Handler())
-	return mux
+	return securityHeaders(mux)
+}
+
+// securityHeaders wraps h with defensive HTTP response headers. The CSP
+// matches the embedded UI: self-hosted scripts, styles, and fetch() only —
+// no inline scripts, no external resources.
+func securityHeaders(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'self'")
+		h.ServeHTTP(w, r)
+	})
 }
