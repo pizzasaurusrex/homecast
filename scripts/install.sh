@@ -96,6 +96,13 @@ download_aircast() {
 # ---------------------------------------------------------------------------
 need_root
 
+# Stop the service before replacing binaries — Linux refuses to overwrite
+# executables that are currently mapped into a running process ("Text file busy").
+if systemctl is-active --quiet homecast 2>/dev/null; then
+    info "Stopping homecast service..."
+    systemctl stop homecast
+fi
+
 ARCH="$(detect_arch)"
 info "Detected architecture: $ARCH"
 
