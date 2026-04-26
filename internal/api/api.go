@@ -41,6 +41,10 @@ type Options struct {
 	DiscoverTimeout time.Duration
 	RestartTimeout  time.Duration
 	Now             func() time.Time
+	// OnBeforeRestart is called before the supervisor is restarted. Use it to
+	// regenerate the AirConnect XML config from the current saved device list.
+	// If it returns an error the restart is aborted.
+	OnBeforeRestart func() error
 }
 
 const (

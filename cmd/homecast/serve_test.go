@@ -59,7 +59,7 @@ func newTestMux(t *testing.T, store api.ConfigStore, disc discovery.Discoverer, 
 	if buf == nil {
 		buf = logs.NewBuffer(50)
 	}
-	return buildServeMux(store, disc, sup, buf)
+	return buildServeMux(store, disc, sup, buf, nil)
 }
 
 func TestBuildServeMux_RoutesUIAndAPI(t *testing.T) {

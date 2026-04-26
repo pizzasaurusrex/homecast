@@ -7,10 +7,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/pizzasaurusrex/homecast/internal/api"
 	"github.com/pizzasaurusrex/homecast/internal/bridge"
+	"github.com/pizzasaurusrex/homecast/internal/config"
 	"github.com/pizzasaurusrex/homecast/internal/discovery"
 	"github.com/pizzasaurusrex/homecast/internal/logs"
 	"github.com/pizzasaurusrex/homecast/internal/web"
@@ -30,6 +33,41 @@ const (
 // passed to bridge.Supervisor.Start is detached from ctx so SIGINT does not
 // immediately kill the AirConnect child; we drive the child via Stop during
 // graceful shutdown instead.
+// xmlConfigPath returns the path where the AirConnect XML config is written,
+// derived from the homecast config path so they sit side by side.
+func xmlConfigPath(configPath string) string {
+	dir := filepath.Dir(configPath)
+	return filepath.Join(dir, "aircast.xml")
+}
+
+// writeAirCastXML generates the AirConnect XML config from the current saved
+// device list and atomically replaces the file at xmlPath.
+func writeAirCastXML(xmlPath string, cfg config.Config) error {
+	data, err := bridge.GenerateAirConnectXML(&cfg)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(xmlPath), ".aircast-*.xml.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp xml: %w", err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("write temp xml: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("close temp xml: %w", err)
+	}
+	if err := os.Rename(tmpName, xmlPath); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("rename xml into place: %w", err)
+	}
+	return nil
+}
+
 func doServe(ctx context.Context, stdout, stderr io.Writer, configPath string, disc discovery.Discoverer) error {
 	store, err := newFileConfigStore(configPath)
 	if err != nil {
@@ -37,8 +75,13 @@ func doServe(ctx context.Context, stdout, stderr io.Writer, configPath string, d
 	}
 	cfg := store.Snapshot()
 
+	xmlPath := xmlConfigPath(configPath)
+	if err := writeAirCastXML(xmlPath, cfg); err != nil {
+		return fmt.Errorf("write initial aircast config: %w", err)
+	}
+
 	logBuf := logs.NewBuffer(logBufferLines)
-	sup := bridge.NewSupervisor(cfg.AirConnect.BinaryPath, nil, logBuf, cfg.AirConnect.AutoRestart)
+	sup := bridge.NewSupervisor(cfg.AirConnect.BinaryPath, []string{"-x", xmlPath}, logBuf, cfg.AirConnect.AutoRestart)
 	if err := sup.Start(context.Background()); err != nil {
 		// Non-fatal: the UI still wants to be reachable so the operator can
 		// inspect logs / fix config / hit restart.
@@ -46,7 +89,11 @@ func doServe(ctx context.Context, stdout, stderr io.Writer, configPath string, d
 	}
 	sup.Watch(ctx)
 
-	mux := buildServeMux(store, disc, sup, logBuf)
+	onBeforeRestart := func() error {
+		return writeAirCastXML(xmlPath, store.Snapshot())
+	}
+
+	mux := buildServeMux(store, disc, sup, logBuf, onBeforeRestart)
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Listen,
@@ -102,13 +149,14 @@ func runServer(ctx context.Context, stderr io.Writer, srv *http.Server, listener
 // buildServeMux composes the /api/* JSON router with the embedded web UI.
 // Exposed as a separate function so it can be tested in isolation without
 // having to stand up a real listener.
-func buildServeMux(store api.ConfigStore, disc discovery.Discoverer, sup api.Supervisor, logBuf api.LogTailer) http.Handler {
+func buildServeMux(store api.ConfigStore, disc discovery.Discoverer, sup api.Supervisor, logBuf api.LogTailer, onBeforeRestart func() error) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/", api.NewHandler(api.Options{
-		Config:     store,
-		Discoverer: disc,
-		Supervisor: sup,
-		Logs:       logBuf,
+		Config:          store,
+		Discoverer:      disc,
+		Supervisor:      sup,
+		Logs:            logBuf,
+		OnBeforeRestart: onBeforeRestart,
 	}))
 	mux.Handle("/", web.Handler())
 	return securityHeaders(mux)
