@@ -34,6 +34,12 @@ func (s *server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) handleBridgeRestart(w http.ResponseWriter, _ *http.Request) {
+	if s.opts.OnBeforeRestart != nil {
+		if err := s.opts.OnBeforeRestart(); err != nil {
+			s.internalError(w, "failed to write bridge config before restart", err)
+			return
+		}
+	}
 	if err := s.opts.Supervisor.Restart(s.opts.RestartTimeout); err != nil {
 		s.internalError(w, "failed to restart bridge", err)
 		return
