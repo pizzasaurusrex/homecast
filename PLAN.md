@@ -26,7 +26,9 @@ the same commit. Use merged PR links as the audit trail.
 | M2        | ✅ done (2026-04-22) | config, discovery, bridge packages, `--dry-run` end-to-end works against real Google Homes. Coverage ≥80% on every package. |
 | M3        | ✅ done (2026-04-23) | HTTP API + embedded web UI. All 4 slices merged ([PR #3](https://github.com/pizzasaurusrex/homecast/pull/3)–[#6](https://github.com/pizzasaurusrex/homecast/pull/6)). Pi E2E smoke-test is manual (requires hardware). |
 | M4        | ✅ done (2026-04-23) | Installer, systemd, Docker-based integration test. [v0.1.0](https://github.com/pizzasaurusrex/homecast/releases/tag/v0.1.0) |
-| M5        | ⏳ stretch     | iOS Shortcuts pack                                |
+| M5        | ⏳ pending     | "Now Playing" indicator — parse AirConnect logs to surface which speaker is active in the UI |
+| M6        | ⏳ pending     | Bluetooth speaker support — expose paired Bluetooth speakers as AirPlay targets via shairport-sync + bluealsa |
+| M7        | ⏳ stretch     | iOS Shortcuts pack                                |
 
 ### Recent fixes
 
@@ -35,7 +37,9 @@ the same commit. Use merged PR links as the audit trail.
 ### Next actions (in order)
 
 1. Manual E2E on the Pi: flash Pi OS, run the one-line installer, prove an iPhone can AirPlay to a Google Home end-to-end (smoke-test checklist in README).
-2. M5 (stretch): iOS Shortcuts pack.
+2. M5: "Now Playing" indicator.
+3. M6: Bluetooth speaker support.
+4. M7 (stretch): iOS Shortcuts pack.
 
 ### Deferred follow-ups
 
@@ -263,7 +267,80 @@ bridge, controlled via the web UI from another device.
 **Done when:** fresh Pi OS install → one curl command → working bridge,
 reproducible from scratch, integration test gates CI.
 
-### M5 — iOS Shortcuts pack (stretch, post-v1)
+### M5 — "Now Playing" indicator
+
+AirConnect logs connection and playback events to stdout. We already capture
+this in the ring-buffer log tailing. This milestone surfaces the active speaker
+in the UI.
+
+- Parse the AirConnect log ring buffer for connection events (e.g. lines
+  containing "connected" or "playing" alongside a device name / UDN).
+- Expose an `activeSpeaker` field in `GET /api/status` (null when nothing is
+  playing; device name + ID when a connection is active).
+- Update the web UI to show a "now playing" badge next to the active device in
+  the devices list and in the status panel.
+- Unit-test the log parser against real AirConnect log lines captured from a Pi
+  session (add representative lines as fixtures).
+
+**Note:** the exact log format must be verified against a live AirConnect run
+before implementing the parser — add fixture lines from the Pi log first.
+
+**Done when:** the UI badge updates within one poll cycle of an iPhone
+connecting to a speaker.
+
+### M6 — Bluetooth speaker support
+
+Expose Bluetooth A2DP speakers paired with the Pi as additional AirPlay targets,
+alongside the existing Google Home / Cast devices.
+
+#### Approach
+
+AirConnect only bridges AirPlay ↔ Google Cast. A separate bridge is needed for
+Bluetooth:
+
+1. Pair the Pi with each Bluetooth speaker (one-time manual step via
+   `bluetoothctl`).
+2. Run `bluealsa` (BlueZ ALSA plugin) to create a virtual ALSA sink for each
+   paired speaker.
+3. Run one `shairport-sync` instance per speaker, configured to output to that
+   speaker's bluealsa ALSA sink. Each instance registers itself on the LAN as a
+   separate AirPlay receiver.
+4. homecast manages the `shairport-sync` processes the same way it manages
+   AirConnect — start/stop/restart, log capture, supervised restarts.
+
+#### homecast changes required
+
+- New `bluetooth` section in `config.yaml`: list of paired device MAC addresses
+  with friendly names.
+- Extend `internal/bridge` (or add `internal/bluetooth`) to supervise one
+  `shairport-sync` child per configured device.
+- Extend the devices list and enable/disable API to cover Bluetooth devices
+  alongside Cast devices.
+- `install.sh`: detect if `bluealsa` and `shairport-sync` are available; offer
+  to install them (or document as a prerequisite).
+- UI: label devices by type (Cast vs. Bluetooth) so the user can tell them apart.
+
+#### Security assessment
+
+Bluetooth does **not** open a new inbound network port or change firewall rules —
+it is a radio protocol separate from the LAN. The incremental attack surface is:
+
+| Surface | Risk | Mitigation |
+|---------|------|------------|
+| BlueZ system service | Runs with elevated privileges; vulnerabilities in BlueZ could be exploited locally | BlueZ is the standard Linux Bluetooth stack, well-audited, kept up to date by Pi OS |
+| Paired device persistence | BlueZ stores paired devices in `/var/lib/bluetooth`; a compromised Pi could reconnect to previously paired speakers | Pairing requires physical proximity and explicit `bluetoothctl pair` — no auto-pairing |
+| `shairport-sync` AirPlay listener | New AirPlay receivers on the LAN (same attack surface as AirConnect) | No new exposure type; same LAN-only assumption as the rest of homecast |
+| Auto-connect on boot | Pi may reconnect to a paired speaker without user action | Expected behavior; document it. User can unpair via `bluetoothctl remove` |
+
+**Net verdict:** safe for a home LAN. No new network holes. The BlueZ / shairport-sync
+processes are well-maintained open-source projects with good security track records.
+Primary operational concern is Bluetooth range (~10 m, degrades through walls) and
+the Pi's weak onboard radio — a USB Bluetooth dongle is recommended for reliability.
+
+**Done when:** an iPhone can AirPlay to a paired Bluetooth speaker via homecast,
+with the speaker appearing in the devices list and toggle working.
+
+### M7 — iOS Shortcuts pack (stretch, post-v1)
 
 - Shortcuts for: enable/disable each speaker, restart bridge, show status
 - Shortcuts call the homecast API over local network
