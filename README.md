@@ -47,6 +47,44 @@ After the installer finishes, run through this checklist:
 If a speaker doesn't appear, check that the Pi and speaker are on the same subnet
 and that mDNS traffic isn't blocked by your router.
 
+## Troubleshooting
+
+### The Pi restarts or drops off the network under load
+
+If the Pi reboots during `apt` upgrades or installs, disappears from the network
+for a minute at a time, or comes back with empty config files or a corrupted SD
+card, suspect the power supply or cable before the Pi itself. A weak supply holds
+5V while the Pi idles and sags as soon as it does real work.
+
+Check the firmware's power flags:
+
+```sh
+vcgencmd get_throttled
+```
+
+| Value | Meaning |
+|---|---|
+| `throttled=0x0` | Power has been fine since boot |
+| `0x50000` | Under-voltage and throttling have happened since boot |
+| `0x50005` | Under-voltage and throttling are happening right now |
+| `0x80000` / `0x80008` | Soft temperature limit only (normal on a Pi 3B+ under load, not a power problem) |
+
+The kernel log records the same events:
+
+```sh
+sudo dmesg | grep -i voltage
+# hwmon hwmon1: Undervoltage detected!
+```
+
+A solid red power LED does not rule this out: the Pi can reset under load while
+the LED stays lit. A hard reset also wipes the flags, so a clean `0x0` straight
+after an unexplained reboot proves nothing. Re-check after putting the Pi under
+load.
+
+To fix it, use a supply rated for your model (5.1V 2.5A micro-USB for a Pi 3,
+5.1V 3A USB-C for a Pi 4) with a short, thick cable or one that's attached to the
+supply. Phone chargers and long thin cables are the usual culprits.
+
 ## Develop
 
 ### Run locally (Mac) — full e2e
